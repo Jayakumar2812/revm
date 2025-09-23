@@ -24,7 +24,7 @@ pub const HIGH: u64 = 10;
 /// Gas cost for JUMPDEST instruction.
 pub const JUMPDEST: u64 = 1;
 /// Gas cost for REFUND SELFDESTRUCT instruction.
-pub const SELFDESTRUCT_REFUND: i64 = 24000;
+pub const SELFDESTRUCT_REFUND: i64 = 0;
 /// Gas cost for CREATE instruction.
 pub const CREATE: u64 = 32000;
 /// Additional gas cost when a call transfers value.
@@ -50,16 +50,16 @@ pub const COPY: u64 = 3;
 /// Gas cost for BLOCKHASH instruction.
 pub const BLOCKHASH: u64 = 20;
 /// Gas cost per byte for code deposit during contract creation.
-pub const CODEDEPOSIT: u64 = 200;
+pub const CODEDEPOSIT: u64 = 1200;
 
 /// EIP-1884: Repricing for trie-size-dependent opcodes
-pub const ISTANBUL_SLOAD_GAS: u64 = 800;
+pub const ISTANBUL_SLOAD_GAS: u64 = 100;
 /// Gas cost for SSTORE when setting a storage slot from zero to non-zero.
-pub const SSTORE_SET: u64 = 20000;
+pub const SSTORE_SET: u64 = 127_900;
 /// Gas cost for SSTORE when modifying an existing non-zero storage slot.
-pub const SSTORE_RESET: u64 = 5000;
+pub const SSTORE_RESET: u64 = 2900;
 /// Gas refund for SSTORE when clearing a storage slot (setting to zero).
-pub const REFUND_SSTORE_CLEARS: i64 = 15000;
+pub const REFUND_SSTORE_CLEARS: i64 = 120000;
 
 /// The standard cost of calldata token.
 pub const STANDARD_TOKEN_COST: u64 = 4;
@@ -84,9 +84,9 @@ pub const ACCESS_LIST_ADDRESS: u64 = 2400;
 /// Gas cost for accessing a storage key in the access list (EIP-2930).
 pub const ACCESS_LIST_STORAGE_KEY: u64 = 1900;
 /// Gas cost for SLOAD when accessing a cold storage slot (EIP-2929).
-pub const COLD_SLOAD_COST: u64 = 2100;
+pub const COLD_SLOAD_COST: u64 = 8100;
 /// Gas cost for accessing a cold account (EIP-2929).
-pub const COLD_ACCOUNT_ACCESS_COST: u64 = 2600;
+pub const COLD_ACCOUNT_ACCESS_COST: u64 = 10100;
 /// Additional gas cost for accessing a cold account.
 pub const COLD_ACCOUNT_ACCESS_COST_ADDITIONAL: u64 =
     COLD_ACCOUNT_ACCESS_COST - WARM_STORAGE_READ_COST;
@@ -95,7 +95,7 @@ pub const COLD_SLOAD_COST_ADDITIONAL: u64 = COLD_SLOAD_COST - WARM_STORAGE_READ_
 /// Gas cost for reading from a warm storage slot (EIP-2929).
 pub const WARM_STORAGE_READ_COST: u64 = 100;
 /// Gas cost for SSTORE reset operation on a warm storage slot.
-pub const WARM_SSTORE_RESET: u64 = SSTORE_RESET - COLD_SLOAD_COST;
+pub const WARM_SSTORE_RESET: u64 = SSTORE_RESET;
 
 /// EIP-3860 : Limit and meter initcode
 pub const INITCODE_WORD_COST: u64 = 2;
