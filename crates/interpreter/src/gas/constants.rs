@@ -57,7 +57,7 @@ pub const ISTANBUL_SLOAD_GAS: u64 = 100;
 /// Gas cost for SSTORE when setting a storage slot from zero to non-zero.
 pub const SSTORE_SET: u64 = 127_900;
 /// Gas cost for SSTORE when modifying an existing non-zero storage slot.
-pub const SSTORE_RESET: u64 = 2900;
+pub const SSTORE_RESET: u64 = 11000;
 /// Gas refund for SSTORE when clearing a storage slot (setting to zero).
 pub const REFUND_SSTORE_CLEARS: i64 = 120000;
 
@@ -95,7 +95,7 @@ pub const COLD_SLOAD_COST_ADDITIONAL: u64 = COLD_SLOAD_COST - WARM_STORAGE_READ_
 /// Gas cost for reading from a warm storage slot (EIP-2929).
 pub const WARM_STORAGE_READ_COST: u64 = 100;
 /// Gas cost for SSTORE reset operation on a warm storage slot.
-pub const WARM_SSTORE_RESET: u64 = SSTORE_RESET;
+pub const WARM_SSTORE_RESET: u64 = SSTORE_RESET - COLD_SLOAD_COST;
 
 /// EIP-3860 : Limit and meter initcode
 pub const INITCODE_WORD_COST: u64 = 2;
