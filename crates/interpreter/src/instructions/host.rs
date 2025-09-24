@@ -202,6 +202,17 @@ pub fn sload<WIRE: InterpreterTypes, H: Host + ?Sized>(context: InstructionConte
         return;
     };
 
+    // Runtime debug: log SLOAD gas context (safe here; avoid logging in const fns)
+    {
+        let spec = context.interpreter.runtime_flag.spec_id();
+        let warm = gas::WARM_STORAGE_READ_COST;
+        let cold_additional = gas::COLD_SLOAD_COST.saturating_sub(gas::WARM_STORAGE_READ_COST);
+        eprintln!(
+            "SLOAD debug: spec={:?} is_cold={} warm={} cold_additional={}",
+            spec, value.is_cold, warm, cold_additional
+        );
+    }
+
     gas!(
         context.interpreter,
         gas::sload_cost(context.interpreter.runtime_flag.spec_id(), value.is_cold)
