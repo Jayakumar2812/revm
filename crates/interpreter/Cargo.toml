@@ -18,11 +18,11 @@ rustdoc-args = ["--cfg", "docsrs"]
 workspace = true
 
 [dependencies]
-# revm
-bytecode.workspace = true
-primitives.workspace = true
-context-interface.workspace = true
-state.workspace = true
+# revm (pin to crates.io versions to avoid pulling workspace crates)
+bytecode = { package = "revm-bytecode", version = "6.2.2" }
+primitives = { package = "revm-primitives", version = "20.2.1" }
+context-interface = { package = "revm-context-interface", version = "10.2.0" }
+state = { package = "revm-state", version = "7.0.5" }
 
 # optional
 serde = { workspace = true, features = ["derive", "rc"], optional = true }
