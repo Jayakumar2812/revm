@@ -165,6 +165,8 @@ pub const fn initcode_cost(len: usize) -> u64 {
 /// `SLOAD` opcode cost calculation.
 #[inline]
 pub const fn sload_cost(spec_id: SpecId, is_cold: bool) -> u64 {
+    // print sload is called 
+    println!("sload is called ------------------------",COLD_SLOAD_COST);
     if spec_id.is_enabled_in(SpecId::BERLIN) {
         if is_cold {
             COLD_SLOAD_COST
