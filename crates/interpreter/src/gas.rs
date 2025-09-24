@@ -124,8 +124,8 @@ impl Gas {
     /// Related to EIP-3529: Reduction in refunds
     #[inline]
     pub fn set_final_refund(&mut self, is_london: bool) {
-        let max_refund_quotient = if is_london { 5 } else { 2 };
-        self.refunded = (self.refunded() as u64).min(self.spent() / max_refund_quotient) as i64;
+        // let max_refund_quotient = if is_london { 5 } else { 2 };
+        // self.refunded = (self.refunded() as u64).min(self.spent() / max_refund_quotient) as i64;
     }
 
     /// Set a refund value. This overrides the current refund value.

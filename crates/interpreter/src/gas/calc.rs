@@ -12,7 +12,8 @@ pub fn sstore_refund(spec_id: SpecId, vals: &SStoreResult) -> i64 {
     if spec_id.is_enabled_in(SpecId::ISTANBUL) {
         // EIP-3529: Reduction in refunds
         let sstore_clears_schedule = if spec_id.is_enabled_in(SpecId::LONDON) {
-            (SSTORE_RESET - COLD_SLOAD_COST + ACCESS_LIST_STORAGE_KEY) as i64
+            // (SSTORE_RESET - COLD_SLOAD_COST + ACCESS_LIST_STORAGE_KEY) as i64
+            REFUND_SSTORE_CLEARS
         } else {
             REFUND_SSTORE_CLEARS
         };
