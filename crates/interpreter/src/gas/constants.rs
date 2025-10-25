@@ -91,7 +91,7 @@ pub const COLD_ACCOUNT_ACCESS_COST: u64 = 10100;
 /// Gas cost for reading from a warm storage slot (EIP-2929).
 pub const WARM_STORAGE_READ_COST: u64 = 100;
 /// Gas cost for SSTORE reset operation on a warm storage slot.
-WARM_SSTORE_RESET: u64 = SSTORE_RESET - COLD_SLOAD_COST;
+pub const WARM_SSTORE_RESET: u64 = SSTORE_RESET - COLD_SLOAD_COST;
 /// EIP-3860 : Limit and meter initcode
 pub const INITCODE_WORD_COST: u64 = 2;
 
