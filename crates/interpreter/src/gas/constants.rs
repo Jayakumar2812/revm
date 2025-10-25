@@ -50,16 +50,16 @@ pub const COPY: u64 = 3;
 /// Gas cost for BLOCKHASH instruction.
 pub const BLOCKHASH: u64 = 20;
 /// Gas cost per byte for code deposit during contract creation.
-pub const CODEDEPOSIT: u64 = 1200;
+pub const CODEDEPOSIT: u64 = 200;
 
 /// EIP-1884: Repricing for trie-size-dependent opcodes
 pub const ISTANBUL_SLOAD_GAS: u64 = 800;
 /// Gas cost for SSTORE when setting a storage slot from zero to non-zero.
-pub const SSTORE_SET: u64 = 127_900;
+pub const SSTORE_SET: u64 = 20000;
 /// Gas cost for SSTORE when modifying an existing non-zero storage slot.
-pub const SSTORE_RESET: u64 = 11000;
+pub const SSTORE_RESET: u64 = 5000;
 /// Gas refund for SSTORE when clearing a storage slot (setting to zero).
-pub const REFUND_SSTORE_CLEARS: i64 = 120000;
+pub const REFUND_SSTORE_CLEARS: i64 = 0;
 
 /// The standard cost of calldata token.
 pub const STANDARD_TOKEN_COST: u64 = 4;
@@ -91,7 +91,7 @@ pub const COLD_ACCOUNT_ACCESS_COST: u64 = 10100;
 /// Gas cost for reading from a warm storage slot (EIP-2929).
 pub const WARM_STORAGE_READ_COST: u64 = 100;
 /// Gas cost for SSTORE reset operation on a warm storage slot.
-pub const WARM_SSTORE_RESET: u64 = SSTORE_RESET - COLD_SLOAD_COST;
+pub const WARM_SSTORE_RESET: u64 = SSTORE_RESET ;
 
 /// EIP-3860 : Limit and meter initcode
 pub const INITCODE_WORD_COST: u64 = 2;
