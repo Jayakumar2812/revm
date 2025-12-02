@@ -1,7 +1,6 @@
 //! Configuration for the EVM. Containing [`SpecId`].
 use auto_impl::auto_impl;
-use core::fmt::Debug;
-use core::hash::Hash;
+use core::{fmt::Debug, hash::Hash};
 use primitives::{hardfork::SpecId, Address, TxKind, U256};
 
 /// Configuration for the EVM.
@@ -64,6 +63,9 @@ pub trait Cfg {
 
     /// Returns whether the fee charge is disabled.
     fn is_fee_charge_disabled(&self) -> bool;
+
+    /// Returns the limit in bytes for the memory buffer.
+    fn memory_limit(&self) -> u64;
 }
 
 /// What bytecode analysis to perform

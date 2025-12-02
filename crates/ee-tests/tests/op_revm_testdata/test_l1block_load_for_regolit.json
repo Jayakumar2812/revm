@@ -1,12 +1,13 @@
 {
   "result": {
-    "Halt": {
-      "gas_used": 27524,
-      "reason": {
-        "Base": {
-          "PrecompileErrorWithContext": "bls12-381 map fp to g1 input length error"
-        }
-      }
+    "Success": {
+      "gas_refunded": 0,
+      "gas_used": 21000,
+      "logs": [],
+      "output": {
+        "Call": "0x"
+      },
+      "reason": "Stop"
     }
   },
   "state": {
@@ -29,15 +30,15 @@
           }
         },
         "code_hash": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
-        "nonce": 1
+        "nonce": 0
       },
       "status": "Touched | LoadedAsNotExisting",
       "storage": {},
       "transaction_id": 0
     },
-    "0x0000000000000000000000000000000000000010": {
+    "0x0000000000000000000000000000000000100000": {
       "info": {
-        "balance": "0x0",
+        "balance": "0x1",
         "code": {
           "LegacyAnalyzed": {
             "bytecode": "0x00",
@@ -56,7 +57,7 @@
         "code_hash": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
         "nonce": 0
       },
-      "status": "LoadedAsNotExisting",
+      "status": "Touched | LoadedAsNotExisting",
       "storage": {},
       "transaction_id": 0
     },
@@ -132,6 +133,31 @@
         "nonce": 0
       },
       "status": "Touched | LoadedAsNotExisting",
+      "storage": {},
+      "transaction_id": 0
+    },
+    "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee": {
+      "info": {
+        "balance": "0x2386f26fc0ffff",
+        "code": {
+          "LegacyAnalyzed": {
+            "bytecode": "0x00",
+            "jump_table": {
+              "bits": 0,
+              "data": [],
+              "head": {
+                "index": 0,
+                "width": 8
+              },
+              "order": "bitvec::order::Lsb0"
+            },
+            "original_len": 0
+          }
+        },
+        "code_hash": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
+        "nonce": 1
+      },
+      "status": "Touched",
       "storage": {},
       "transaction_id": 0
     }

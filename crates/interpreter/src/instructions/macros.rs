@@ -28,6 +28,10 @@ macro_rules! require_non_staticcall {
 /// Similar to the `?` operator but for use in instruction implementations.
 #[macro_export]
 #[collapse_debuginfo(yes)]
+#[deprecated(
+    since = "29.0.0",
+    note = "Prefer `let Some(x) = expr else { return; };` for early return in instruction functions"
+)]
 macro_rules! otry {
     ($expression: expr) => {{
         let Some(value) = $expression else {
@@ -132,6 +136,11 @@ macro_rules! resize_memory {
         $crate::resize_memory!($interpreter, $offset, $len, ())
     };
     ($interpreter:expr, $offset:expr, $len:expr, $ret:expr) => {
+        #[cfg(feature = "memory_limit")]
+        if $interpreter.memory.limit_reached($offset, $len) {
+            $interpreter.halt_memory_limit_oog();
+            return $ret;
+        }
         if !$crate::interpreter::resize_memory(
             &mut $interpreter.gas,
             &mut $interpreter.memory,

@@ -1,12 +1,13 @@
 use auto_impl::auto_impl;
 use context::{Cfg, LocalContextTr};
-use context_interface::ContextTr;
+use context_interface::{ContextTr, JournalTr};
 use interpreter::{CallInput, CallInputs, Gas, InstructionResult, InterpreterResult};
-use precompile::PrecompileError;
-use precompile::{PrecompileSpecId, Precompiles};
+use precompile::{PrecompileError, PrecompileSpecId, Precompiles};
 use primitives::{hardfork::SpecId, Address, Bytes};
-use std::boxed::Box;
-use std::string::String;
+use std::{
+    boxed::Box,
+    string::{String, ToString},
+};
 
 /// Provider for precompiled contracts in the EVM.
 #[auto_impl(&mut, Box)]
@@ -16,7 +17,7 @@ pub trait PrecompileProvider<CTX: ContextTr> {
 
     /// Sets the spec id and returns true if the spec id was changed. Initial call to set_spec will always return true.
     ///
-    /// Returned booling will determine if precompile addresses should be injected into the journal.
+    /// Returns `true` if precompile addresses should be injected into the journal.
     fn set_spec(&mut self, spec: <CTX::Cfg as Cfg>::Spec) -> bool;
 
     /// Run the precompile.
@@ -102,21 +103,25 @@ impl<CTX: ContextTr> PrecompileProvider<CTX> for EthPrecompiles {
             output: Bytes::new(),
         };
 
-        let r;
-        let input_bytes = match &inputs.input {
-            CallInput::SharedBuffer(range) => {
-                if let Some(slice) = context.local().shared_memory_buffer_slice(range.clone()) {
-                    r = slice;
-                    r.as_ref()
-                } else {
-                    &[]
+        let exec_result = {
+            let r;
+            let input_bytes = match &inputs.input {
+                CallInput::SharedBuffer(range) => {
+                    if let Some(slice) = context.local().shared_memory_buffer_slice(range.clone()) {
+                        r = slice;
+                        r.as_ref()
+                    } else {
+                        &[]
+                    }
                 }
-            }
-            CallInput::Bytes(bytes) => bytes.0.iter().as_slice(),
+                CallInput::Bytes(bytes) => bytes.0.iter().as_slice(),
+            };
+            precompile.execute(input_bytes, inputs.gas_limit)
         };
 
-        match precompile.execute(input_bytes, inputs.gas_limit) {
+        match exec_result {
             Ok(output) => {
+                result.gas.record_refund(output.gas_refunded);
                 let underflow = result.gas.record_cost(output.gas_used);
                 assert!(underflow, "Gas underflow is not possible");
                 result.result = if output.reverted {
@@ -133,6 +138,14 @@ impl<CTX: ContextTr> PrecompileProvider<CTX> for EthPrecompiles {
                 } else {
                     InstructionResult::PrecompileError
                 };
+                // If this is a top-level precompile call (depth == 1), persist the error message
+                // into the local context so it can be returned as output in the final result.
+                // Only do this for non-OOG errors (OOG is a distinct halt reason without output).
+                if !e.is_oog() && context.journal().depth() == 1 {
+                    context
+                        .local_mut()
+                        .set_precompile_error_context(e.to_string());
+                }
             }
         }
         Ok(Some(result))

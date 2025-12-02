@@ -70,7 +70,7 @@ impl<
         let block = &self.block;
         let tx = &self.tx;
         let cfg = &self.cfg;
-        let db = &self.journaled_state.db();
+        let db = self.journaled_state.db();
         let journal = &self.journaled_state;
         let chain = &self.chain;
         let local = &self.local;
@@ -103,16 +103,6 @@ impl<
     fn error(&mut self) -> &mut Result<(), ContextError<<Self::Db as Database>::Error>> {
         &mut self.error
     }
-
-    #[inline]
-    fn tx_journal_mut(&mut self) -> (&Self::Tx, &mut Self::Journal) {
-        (&self.tx, &mut self.journaled_state)
-    }
-
-    #[inline]
-    fn tx_local_mut(&mut self) -> (&Self::Tx, &mut Self::Local) {
-        (&self.tx, &mut self.local)
-    }
 }
 
 impl<
@@ -141,14 +131,15 @@ impl<
         JOURNAL: JournalTr<Database = DB>,
         CHAIN: Default,
         LOCAL: LocalContextTr + Default,
-    > Context<BLOCK, TX, CfgEnv, DB, JOURNAL, CHAIN, LOCAL>
+        SPEC: Default + Copy + Into<SpecId>,
+    > Context<BLOCK, TX, CfgEnv<SPEC>, DB, JOURNAL, CHAIN, LOCAL>
 {
     /// Creates a new context with a new database type.
     ///
     /// This will create a new [`Journal`] object.
-    pub fn new(db: DB, spec: SpecId) -> Self {
+    pub fn new(db: DB, spec: SPEC) -> Self {
         let mut journaled_state = JOURNAL::new(db);
-        journaled_state.set_spec_id(spec);
+        journaled_state.set_spec_id(spec.into());
         Self {
             tx: TX::default(),
             block: BLOCK::default(),
@@ -531,19 +522,25 @@ impl<
     }
 
     /// Marks `address` to be deleted, with funds transferred to `target`.
+    #[inline]
     fn selfdestruct(
         &mut self,
         address: Address,
         target: Address,
-    ) -> Option<StateLoad<SelfDestructResult>> {
+        skip_cold_load: bool,
+    ) -> Result<StateLoad<SelfDestructResult>, LoadError> {
         self.journal_mut()
-            .selfdestruct(address, target)
+            .selfdestruct(address, target, skip_cold_load)
             .map_err(|e| {
-                *self.error() = Err(e.into());
+                let (ret, err) = e.into_parts();
+                if let Some(err) = err {
+                    *self.error() = Err(err.into());
+                }
+                ret
             })
-            .ok()
     }
 
+    #[inline]
     fn sstore_skip_cold_load(
         &mut self,
         address: Address,
@@ -562,6 +559,7 @@ impl<
             })
     }
 
+    #[inline]
     fn sload_skip_cold_load(
         &mut self,
         address: Address,
@@ -579,6 +577,7 @@ impl<
             })
     }
 
+    #[inline]
     fn load_account_info_skip_cold_load(
         &mut self,
         address: Address,

@@ -151,7 +151,7 @@ impl<SPEC> CfgEnv<SPEC> {
     pub fn new_with_spec(spec: SPEC) -> Self {
         Self {
             chain_id: 1,
-            tx_chain_id_check: false,
+            tx_chain_id_check: true,
             limit_contract_code_size: None,
             limit_contract_initcode_size: None,
             spec,
@@ -397,6 +397,16 @@ impl<SPEC: Into<SpecId> + Copy> Cfg for CfgEnv<SPEC> {
                 self.disable_fee_charge
             } else {
                 false
+            }
+        }
+    }
+
+    fn memory_limit(&self) -> u64 {
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "memory_limit")] {
+                self.memory_limit
+            } else {
+                u64::MAX
             }
         }
     }

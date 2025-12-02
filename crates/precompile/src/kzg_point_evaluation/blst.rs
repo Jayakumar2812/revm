@@ -1,10 +1,12 @@
 //! KZG point evaluation precompile using BLST BLS12-381 implementation.
-use crate::bls12_381::blst::{
-    p1_add_or_double, p1_from_affine, p1_scalar_mul, p1_to_affine, p2_add_or_double,
-    p2_from_affine, p2_scalar_mul, p2_to_affine, pairing_check,
+use crate::{
+    bls12_381::blst::{
+        p1_add_or_double, p1_from_affine, p1_scalar_mul, p1_to_affine, p2_add_or_double,
+        p2_from_affine, p2_scalar_mul, p2_to_affine, pairing_check,
+    },
+    bls12_381_const::TRUSTED_SETUP_TAU_G2_BYTES,
+    PrecompileError,
 };
-use crate::bls12_381_const::TRUSTED_SETUP_TAU_G2_BYTES;
-use crate::PrecompileError;
 use ::blst::{
     blst_p1_affine, blst_p1_affine_in_g1, blst_p1_affine_on_curve, blst_p2_affine, blst_scalar,
     blst_scalar_fr_check, blst_scalar_from_bendian,
@@ -68,8 +70,8 @@ fn get_trusted_setup_g2() -> blst_p2_affine {
     let mut g2_affine = blst_p2_affine::default();
     unsafe {
         // The compressed format has x coordinate and a flag bit for y
-        // We use deserialize_compressed which handles this automatically
-        let result = blst::blst_p2_deserialize(&mut g2_affine, TRUSTED_SETUP_TAU_G2_BYTES.as_ptr());
+        // We use uncompress which handles this automatically
+        let result = blst::blst_p2_uncompress(&mut g2_affine, TRUSTED_SETUP_TAU_G2_BYTES.as_ptr());
         if result != blst::BLST_ERROR::BLST_SUCCESS {
             panic!("Failed to deserialize trusted setup G2 point");
         }
@@ -91,7 +93,7 @@ fn get_g2_generator() -> blst_p2_affine {
 fn parse_g1_compressed(bytes: &[u8; 48]) -> Result<blst_p1_affine, PrecompileError> {
     let mut point = blst_p1_affine::default();
     unsafe {
-        let result = blst::blst_p1_deserialize(&mut point, bytes.as_ptr());
+        let result = blst::blst_p1_uncompress(&mut point, bytes.as_ptr());
         if result != blst::BLST_ERROR::BLST_SUCCESS {
             return Err(PrecompileError::KzgInvalidG1Point);
         }

@@ -12,19 +12,18 @@ use revm::{
         BlockEnv, CfgEnv, TxEnv,
     },
     context_interface::result::HaltReason,
-    database::{BenchmarkDB, EmptyDB, BENCH_CALLER, BENCH_CALLER_BALANCE, BENCH_TARGET},
+    database::{BenchmarkDB, EmptyDB, State, BENCH_CALLER, BENCH_CALLER_BALANCE, BENCH_TARGET},
     handler::system_call::SYSTEM_ADDRESS,
     interpreter::{
         gas::{calculate_initial_tx_gas, InitialAndFloorGas},
-        Interpreter, InterpreterTypes,
+        InterpreterTypes,
     },
     precompile::{bls12_381_const, bls12_381_utils, bn254, secp256r1, u64_to_address},
-    primitives::{bytes, eip7825, Address, Bytes, Log, TxKind, U256},
+    primitives::{address, bytes, eip7825, Address, Bytes, Log, TxKind, U256},
     state::Bytecode,
     Context, ExecuteEvm, InspectEvm, Inspector, Journal, SystemCallEvm,
 };
-use std::path::PathBuf;
-use std::vec::Vec;
+use std::{path::PathBuf, vec::Vec};
 
 // Re-export the constant for testdata directory path
 const TESTS_TESTDATA: &str = "tests/op_revm_testdata";
@@ -230,9 +229,9 @@ fn test_halted_tx_call_bn254_pair_granite() {
     assert!(matches!(
         output.result,
         ExecutionResult::Halt {
-            reason: OpHaltReason::Base(HaltReason::PrecompileError),
+            reason: OpHaltReason::Base(HaltReason::PrecompileErrorWithContext(ref msg)),
             ..
-        }
+        } if msg == "bn254 invalid pair length"
     ));
 
     compare_or_save_op_testdata("test_halted_tx_call_bn254_pair_granite.json", &output);
@@ -300,9 +299,9 @@ fn test_halted_tx_call_bls12_381_g1_add_input_wrong_size() {
     assert!(matches!(
         output.result,
         ExecutionResult::Halt {
-            reason: OpHaltReason::Base(HaltReason::PrecompileError),
+            reason: OpHaltReason::Base(HaltReason::PrecompileErrorWithContext(ref msg)),
             ..
-        }
+        } if msg == "bls12-381 g1 add input length error"
     ));
 
     compare_or_save_op_testdata(
@@ -379,9 +378,9 @@ fn test_halted_tx_call_bls12_381_g1_msm_input_wrong_size() {
     assert!(matches!(
         output.result,
         ExecutionResult::Halt {
-            reason: OpHaltReason::Base(HaltReason::PrecompileError),
+            reason: OpHaltReason::Base(HaltReason::PrecompileErrorWithContext(ref msg)),
             ..
-        }
+        } if msg == "bls12-381 g1 msm input length error"
     ));
 
     compare_or_save_op_testdata(
@@ -448,9 +447,9 @@ fn test_halted_tx_call_bls12_381_g1_msm_wrong_input_layout() {
     assert!(matches!(
         output.result,
         ExecutionResult::Halt {
-            reason: OpHaltReason::Base(HaltReason::PrecompileError),
+            reason: OpHaltReason::Base(HaltReason::PrecompileErrorWithContext(ref msg)),
             ..
-        }
+        } if msg == "bls12-381 fp 64 top bytes of input are not zero"
     ));
 
     compare_or_save_op_testdata(
@@ -522,9 +521,9 @@ fn test_halted_tx_call_bls12_381_g2_add_input_wrong_size() {
     assert!(matches!(
         output.result,
         ExecutionResult::Halt {
-            reason: OpHaltReason::Base(HaltReason::PrecompileError),
+            reason: OpHaltReason::Base(HaltReason::PrecompileErrorWithContext(ref msg)),
             ..
-        }
+        } if msg == "bls12-381 g2 add input length error"
     ));
 
     compare_or_save_op_testdata(
@@ -601,9 +600,9 @@ fn test_halted_tx_call_bls12_381_g2_msm_input_wrong_size() {
     assert!(matches!(
         output.result,
         ExecutionResult::Halt {
-            reason: OpHaltReason::Base(HaltReason::PrecompileError),
+            reason: OpHaltReason::Base(HaltReason::PrecompileErrorWithContext(ref msg)),
             ..
-        }
+        } if msg == "bls12-381 g2 msm input length error"
     ));
 
     compare_or_save_op_testdata(
@@ -670,9 +669,9 @@ fn test_halted_tx_call_bls12_381_g2_msm_wrong_input_layout() {
     assert!(matches!(
         output.result,
         ExecutionResult::Halt {
-            reason: OpHaltReason::Base(HaltReason::PrecompileError),
+            reason: OpHaltReason::Base(HaltReason::PrecompileErrorWithContext(ref msg)),
             ..
-        }
+        } if msg == "bls12-381 fp 64 top bytes of input are not zero"
     ));
 
     compare_or_save_op_testdata(
@@ -744,9 +743,9 @@ fn test_halted_tx_call_bls12_381_pairing_input_wrong_size() {
     assert!(matches!(
         output.result,
         ExecutionResult::Halt {
-            reason: OpHaltReason::Base(HaltReason::PrecompileError),
+            reason: OpHaltReason::Base(HaltReason::PrecompileErrorWithContext(ref msg)),
             ..
-        }
+        } if msg == "bls12-381 pairing input length error"
     ));
 
     compare_or_save_op_testdata(
@@ -810,9 +809,9 @@ fn test_tx_call_bls12_381_pairing_wrong_input_layout() {
     assert!(matches!(
         output.result,
         ExecutionResult::Halt {
-            reason: OpHaltReason::Base(HaltReason::PrecompileError),
+            reason: OpHaltReason::Base(HaltReason::PrecompileErrorWithContext(ref msg)),
             ..
-        }
+        } if msg == "bls12-381 fp 64 top bytes of input are not zero"
     ));
 
     compare_or_save_op_testdata(
@@ -894,9 +893,9 @@ fn test_halted_tx_call_bls12_381_map_fp_to_g1_input_wrong_size() {
     assert!(matches!(
         output.result,
         ExecutionResult::Halt {
-            reason: OpHaltReason::Base(HaltReason::PrecompileError),
+            reason: OpHaltReason::Base(HaltReason::PrecompileErrorWithContext(ref msg)),
             ..
-        }
+        } if msg == "bls12-381 map fp to g1 input length error"
     ));
 
     compare_or_save_op_testdata(
@@ -948,6 +947,44 @@ fn test_halted_tx_call_bls12_381_map_fp2_to_g2_out_of_gas() {
 }
 
 #[test]
+fn test_l1block_load_for_pre_regolith() {
+    const SPEC_ID: OpSpecId = OpSpecId::REGOLITH;
+
+    let ctx = Context::op()
+        .with_tx(
+            OpTransaction::builder()
+                .base(
+                    TxEnv::builder()
+                        .caller(BENCH_CALLER)
+                        .kind(TxKind::Call(address!(
+                            "0x0000000000000000000000000000000000100000"
+                        )))
+                        .value(U256::from(1))
+                        .gas_limit(100_000),
+                )
+                .build_fill(),
+        )
+        .modify_chain_chained(|l1_block| {
+            l1_block.l2_block = None;
+        })
+        .modify_cfg_chained(|cfg| cfg.spec = SPEC_ID);
+
+    let mut evm = ctx
+        .with_db(
+            State::builder()
+                .with_database(BenchmarkDB::default())
+                .build(),
+        )
+        .build_op();
+    let output = evm.replay().unwrap();
+
+    // assert out of gas
+    assert!(output.result.is_success());
+
+    compare_or_save_op_testdata("test_l1block_load_for_pre_regolith.json", &output);
+}
+
+#[test]
 fn test_halted_tx_call_bls12_381_map_fp2_to_g2_input_wrong_size() {
     const SPEC_ID: OpSpecId = OpSpecId::ISTHMUS;
     let input = Bytes::from([1; bls12_381_const::PADDED_FP2_LENGTH]);
@@ -978,9 +1015,9 @@ fn test_halted_tx_call_bls12_381_map_fp2_to_g2_input_wrong_size() {
     assert!(matches!(
         output.result,
         ExecutionResult::Halt {
-            reason: OpHaltReason::Base(HaltReason::PrecompileError),
+            reason: OpHaltReason::Base(HaltReason::PrecompileErrorWithContext(ref msg)),
             ..
-        }
+        } if msg == "bls12-381 map fp2 to g2 input length error"
     ));
 
     compare_or_save_op_testdata(
@@ -1045,8 +1082,8 @@ struct LogInspector {
 }
 
 impl<CTX, INTR: InterpreterTypes> Inspector<CTX, INTR> for LogInspector {
-    fn log(&mut self, _interp: &mut Interpreter<INTR>, _context: &mut CTX, log: Log) {
-        self.logs.push(log)
+    fn log(&mut self, _context: &mut CTX, log: Log) {
+        self.logs.push(log);
     }
 }
 

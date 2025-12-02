@@ -4,8 +4,8 @@ set -eo pipefail
 # Usage: ./scripts/run-tests.sh --help
 
 # Version for the execution spec tests
-MAIN_VERSION="v4.5.0"
-DEVNET_VERSION="fusaka-devnet-5@v1.1.0"
+MAIN_VERSION="v5.3.0"
+DEVNET_VERSION="fusaka-devnet-5@v2.1.0"
 
 ### Directories ###
 FIXTURES_DIR="test-fixtures"
@@ -13,7 +13,6 @@ FIXTURES_DIR="test-fixtures"
 MAIN_DIR="$FIXTURES_DIR/main"
 MAIN_STABLE_DIR="$MAIN_DIR/stable"
 MAIN_DEVELOP_DIR="$MAIN_DIR/develop"
-MAIN_STATIC_DIR="$MAIN_DIR/static"
 
 DEVNET_DIR="$FIXTURES_DIR/devnet"
 DEVNET_DEVELOP_DIR="$DEVNET_DIR/develop"
@@ -25,7 +24,6 @@ FIXTURES_URL="https://github.com/ethereum/execution-spec-tests/releases/download
 
 MAIN_STABLE_TAR="fixtures_stable.tar.gz"
 MAIN_DEVELOP_TAR="fixtures_develop.tar.gz"
-MAIN_STATIC_TAR="fixtures_static.tar.gz"
 
 DEVNET_TAR="fixtures_fusaka-devnet-5.tar.gz"
 
@@ -74,7 +72,7 @@ clean() {
 
 # Check if all required fixture directories exist
 check_fixtures() {
-    if [ -d "$MAIN_STABLE_DIR" ] && [ -d "$MAIN_DEVELOP_DIR" ] && [ -d "$MAIN_STATIC_DIR" ] && [ -d "$DEVNET_DIR" ] && [ -d "$LEGACY_DIR" ]; then
+    if [ -d "$MAIN_STABLE_DIR" ] && [ -d "$MAIN_DEVELOP_DIR" ] && [ -d "$DEVNET_DIR" ] && [ -d "$LEGACY_DIR" ]; then
         return 0
     else
         return 1
@@ -90,27 +88,32 @@ download_and_extract() {
     local version="$4"
 
     echo "Downloading ${label} fixtures..."
-    curl -L "${FIXTURES_URL}/${version}/${tar_file}" -o "${FIXTURES_DIR}/${tar_file}"
+    # Use -fsSL to fail on HTTP errors; add small retry for transient network issues
+    curl -fsSL --retry 3 --retry-delay 2 "${FIXTURES_URL}/${version}/${tar_file}" -o "${FIXTURES_DIR}/${tar_file}"
     echo "Extracting ${label} fixtures..."
      # strip-components=1 removes the first top level directory from the flepath
      # This is needed because when we extract the tar, it is placed under an
      # unnecessary "fixtures/" directory.
     tar -xzf "${FIXTURES_DIR}/${tar_file}" --strip-components=1 -C "$target_dir"
+
+    # Remove the tar file
+    rm "${FIXTURES_DIR}/${tar_file}"
+
+    # remove all unused folders
+    find "$target_dir" -depth -name blockchain_tests_engine -exec rm -rf {} \;
+    find "$target_dir" -depth -name blockchain_tests_engine_x -exec rm -rf {} \;
+    find "$target_dir" -depth -name blockchain_tests_sync -exec rm -rf {} \;
 }
 
 # Download all fixtures
 download_fixtures() {
     echo "Creating fixtures directory structure..."
-    mkdir -p "$MAIN_STABLE_DIR" "$MAIN_DEVELOP_DIR" "$MAIN_STATIC_DIR" "$DEVNET_DIR" "$LEGACY_DIR"
-
+    mkdir -p "$MAIN_STABLE_DIR" "$MAIN_DEVELOP_DIR" "$DEVNET_DIR" "$LEGACY_DIR"
+    
     download_and_extract "$MAIN_STABLE_DIR" "$MAIN_STABLE_TAR" "main stable" "$MAIN_VERSION"
     download_and_extract "$MAIN_DEVELOP_DIR" "$MAIN_DEVELOP_TAR" "main develop" "$MAIN_VERSION"
-    download_and_extract "$MAIN_STATIC_DIR" "$MAIN_STATIC_TAR" "main static" "$MAIN_VERSION"
     download_and_extract "$DEVNET_DIR" "$DEVNET_TAR" "devnet" "$DEVNET_VERSION"
 
-    echo "Cleaning up tar files..."
-    rm "${FIXTURES_DIR}/${MAIN_STABLE_TAR}" "${FIXTURES_DIR}/${MAIN_DEVELOP_TAR}" "${FIXTURES_DIR}/${MAIN_STATIC_TAR}" "${FIXTURES_DIR}/${DEVNET_TAR}"
-    
     # Clone legacytests repository
     echo "Cloning legacytests repository..."
     git clone --depth 1 "$LEGACY_REPO_URL" "$LEGACY_DIR"
@@ -146,21 +149,18 @@ run_tests() {
 
     echo "Running main develop statetests..."
     $RUST_RUNNER run $CARGO_OPTS -p revme -- statetest "$MAIN_DEVELOP_DIR/state_tests"
-    
-    echo "Running main static statetests..."
-    $RUST_RUNNER run $CARGO_OPTS -p revme -- statetest "$MAIN_STATIC_DIR/state_tests"
 
     echo "Running devnet statetests..."
     $RUST_RUNNER run $CARGO_OPTS -p revme -- statetest "$DEVNET_DIR/state_tests"
 
-    echo "Running legacy tests..."
+    echo "Running legacy Cancun tests..."
     $RUST_RUNNER run $CARGO_OPTS -p revme -- statetest "$LEGACY_DIR/Cancun/GeneralStateTests"
+
+    echo "Running legacy Constantinople tests..."
+    $RUST_RUNNER run $CARGO_OPTS -p revme -- statetest "$LEGACY_DIR/Constantinople/GeneralStateTests"
 
     echo "Running main develop blockchain tests..."
     $RUST_RUNNER run $CARGO_OPTS -p revme -- btest "$MAIN_DEVELOP_DIR/blockchain_tests"
-
-    echo "Running main static blockchain tests..."
-    $RUST_RUNNER run $CARGO_OPTS -p revme -- btest "$MAIN_STATIC_DIR/blockchain_tests"
 
     echo "Running main stable blockchain tests..."
     $RUST_RUNNER run $CARGO_OPTS -p revme -- btest "$MAIN_STABLE_DIR/blockchain_tests"

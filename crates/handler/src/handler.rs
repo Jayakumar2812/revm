@@ -1,17 +1,19 @@
 use crate::{
-    evm::FrameTr, execution, post_execution, pre_execution, validation, EvmTr, FrameResult,
-    ItemOrResult,
+    evm::FrameTr,
+    execution, post_execution,
+    pre_execution::{self, apply_eip7702_auth_list},
+    validation, EvmTr, FrameResult, ItemOrResult,
 };
-use context::result::{ExecutionResult, FromStringError};
-use context::LocalContextTr;
-use context_interface::context::ContextError;
-use context_interface::ContextTr;
+use context::{
+    result::{ExecutionResult, FromStringError},
+    LocalContextTr,
+};
 use context_interface::{
+    context::ContextError,
     result::{HaltReasonTr, InvalidHeader, InvalidTransaction},
-    Cfg, Database, JournalTr, Transaction,
+    Cfg, ContextTr, Database, JournalTr, Transaction,
 };
-use interpreter::interpreter_action::FrameInit;
-use interpreter::{Gas, InitialAndFloorGas, SharedMemory};
+use interpreter::{interpreter_action::FrameInit, Gas, InitialAndFloorGas, SharedMemory};
 use primitives::U256;
 use state::Bytecode;
 
@@ -274,7 +276,7 @@ pub trait Handler {
     /// Returns the gas refund amount specified by EIP-7702.
     #[inline]
     fn apply_eip7702_auth_list(&self, evm: &mut Self::Evm) -> Result<u64, Self::Error> {
-        pre_execution::apply_eip7702_auth_list(evm.ctx())
+        apply_eip7702_auth_list(evm.ctx_mut())
     }
 
     /// Deducts maximum possible fee and transfer value from caller's balance.
@@ -298,15 +300,16 @@ pub trait Handler {
         gas_limit: u64,
     ) -> Result<FrameInit, Self::Error> {
         let ctx = evm.ctx_mut();
-        let memory = SharedMemory::new_with_buffer(ctx.local().shared_memory_buffer().clone());
+        let mut memory = SharedMemory::new_with_buffer(ctx.local().shared_memory_buffer().clone());
+        memory.set_memory_limit(ctx.cfg().memory_limit());
 
         let (tx, journal) = ctx.tx_journal_mut();
         let bytecode = if let Some(&to) = tx.kind().to() {
-            let account = &journal.load_account_code(to)?.info;
+            let account = &journal.load_account_with_code(to)?.info;
 
             if let Some(Bytecode::Eip7702(eip7702_bytecode)) = &account.code {
                 let delegated_address = eip7702_bytecode.delegated_address;
-                let account = &journal.load_account_code(delegated_address)?.info;
+                let account = &journal.load_account_with_code(delegated_address)?.info;
                 Some((
                     account.code.clone().unwrap_or_default(),
                     account.code_hash(),
@@ -457,7 +460,7 @@ pub trait Handler {
         match core::mem::replace(evm.ctx().error(), Ok(())) {
             Err(ContextError::Db(e)) => return Err(e.into()),
             Err(ContextError::Custom(e)) => return Err(Self::Error::from_string(e)),
-            Ok(_) => (),
+            Ok(()) => (),
         }
 
         let exec_result = post_execution::output(evm.ctx(), result);

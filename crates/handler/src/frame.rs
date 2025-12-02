@@ -1,21 +1,20 @@
-use crate::evm::FrameTr;
-use crate::item_or_result::FrameInitOrResult;
-use crate::{precompile_provider::PrecompileProvider, ItemOrResult};
-use crate::{CallFrame, CreateFrame, FrameData, FrameResult};
+use crate::{
+    evm::FrameTr, item_or_result::FrameInitOrResult, precompile_provider::PrecompileProvider,
+    CallFrame, CreateFrame, FrameData, FrameResult, ItemOrResult,
+};
 use context::result::FromStringError;
-use context_interface::context::ContextError;
-use context_interface::local::{FrameToken, OutFrame};
-use context_interface::ContextTr;
 use context_interface::{
+    context::ContextError,
     journaled_state::{JournalCheckpoint, JournalTr},
-    Cfg, Database,
+    local::{FrameToken, OutFrame},
+    Cfg, ContextTr, Database,
 };
 use core::cmp::min;
 use derive_where::derive_where;
-use interpreter::interpreter_action::FrameInit;
 use interpreter::{
     gas,
     interpreter::{EthInterpreter, ExtBytecode},
+    interpreter_action::FrameInit,
     interpreter_types::ReturnData,
     CallInput, CallInputs, CallOutcome, CallValue, CreateInputs, CreateOutcome, CreateScheme,
     FrameInput, Gas, InputsImpl, InstructionResult, Interpreter, InterpreterAction,
@@ -24,11 +23,10 @@ use interpreter::{
 use primitives::{
     constants::CALL_STACK_LIMIT,
     hardfork::SpecId::{self, HOMESTEAD, LONDON, SPURIOUS_DRAGON},
+    keccak256, Address, Bytes, U256,
 };
-use primitives::{keccak256, Address, Bytes, U256};
 use state::Bytecode;
-use std::borrow::ToOwned;
-use std::boxed::Box;
+use std::{borrow::ToOwned, boxed::Box, vec::Vec};
 
 /// Frame implementation for Ethereum.
 #[derive_where(Clone, Debug; IW,
@@ -155,6 +153,8 @@ impl EthFrame<EthInterpreter> {
                     output: Bytes::new(),
                 },
                 memory_offset: inputs.return_memory_offset.clone(),
+                was_precompile_called: false,
+                precompile_call_logs: Vec::new(),
             })))
         };
 
@@ -190,19 +190,37 @@ impl EthFrame<EthInterpreter> {
         let gas_limit = inputs.gas_limit;
 
         if let Some(result) = precompiles.run(ctx, &inputs).map_err(ERROR::from_string)? {
+            let mut logs = Vec::new();
             if result.result.is_ok() {
                 ctx.journal_mut().checkpoint_commit();
             } else {
+                // clone logs that precompile created, only possible with custom precompiles.
+                // checkpoint.log_i will be always correct.
+                logs = ctx.journal_mut().logs()[checkpoint.log_i..].to_vec();
                 ctx.journal_mut().checkpoint_revert(checkpoint);
             }
             return Ok(ItemOrResult::Result(FrameResult::Call(CallOutcome {
                 result,
                 memory_offset: inputs.return_memory_offset.clone(),
+                was_precompile_called: true,
+                precompile_call_logs: logs,
             })));
         }
 
-        let bytecode = inputs.bytecode.clone();
-        let bytecode_hash = inputs.bytecode_hash;
+        // Get bytecode and hash - either from known_bytecode or load from account
+        let (bytecode, bytecode_hash) = if let Some((hash, code)) = inputs.known_bytecode.clone() {
+            // Use provided bytecode and hash
+            (code, hash)
+        } else {
+            // Load account and get its bytecode
+            let account = ctx
+                .journal_mut()
+                .load_account_with_code(inputs.bytecode_address)?;
+            (
+                account.info.code.clone().unwrap_or_default(),
+                account.info.code_hash,
+            )
+        };
 
         // Returns success if bytecode is empty.
         if bytecode.is_empty() {
@@ -258,22 +276,19 @@ impl EthFrame<EthInterpreter> {
         }
 
         // Fetch balance of caller.
-        let caller_info = &mut context.journal_mut().load_account(inputs.caller)?.data.info;
+        let mut caller_info = context.journal_mut().load_account_mut(inputs.caller)?;
 
         // Check if caller has enough balance to send to the created contract.
-        if caller_info.balance < inputs.value {
+        // decrement of balance is done in the create_account_checkpoint.
+        if *caller_info.balance() < inputs.value {
             return return_error(InstructionResult::OutOfFunds);
         }
 
         // Increase nonce of caller and check if it overflows
-        let old_nonce = caller_info.nonce;
-        let Some(new_nonce) = old_nonce.checked_add(1) else {
+        let old_nonce = caller_info.nonce();
+        if !caller_info.bump_nonce() {
             return return_error(InstructionResult::Return);
         };
-        caller_info.nonce = new_nonce;
-        context
-            .journal_mut()
-            .nonce_bump_journal_entry(inputs.caller);
 
         // Create address
         let mut init_code_hash = None;

@@ -194,6 +194,24 @@ mod tests {
                     (OpSpecId::FJORD, true),
                 ],
             ),
+            (
+                OpSpecId::JOVIAN,
+                vec![
+                    (SpecId::PRAGUE, true),
+                    (SpecId::SHANGHAI, true),
+                    (SpecId::CANCUN, true),
+                    (SpecId::MERGE, true),
+                ],
+                vec![
+                    (OpSpecId::BEDROCK, true),
+                    (OpSpecId::REGOLITH, true),
+                    (OpSpecId::CANYON, true),
+                    (OpSpecId::ECOTONE, true),
+                    (OpSpecId::FJORD, true),
+                    (OpSpecId::HOLOCENE, true),
+                    (OpSpecId::ISTHMUS, true),
+                ],
+            ),
         ];
 
         for (op_spec, eth_tests, op_tests) in test_cases {

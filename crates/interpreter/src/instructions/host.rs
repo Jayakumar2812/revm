@@ -1,7 +1,8 @@
 use crate::{
     gas::{
-        self, CALL_STIPEND, COLD_ACCOUNT_ACCESS_COST_ADDITIONAL, COLD_SLOAD_COST_ADDITIONAL,
-        ISTANBUL_SLOAD_GAS, WARM_STORAGE_READ_COST,
+        self, selfdestruct_cold_beneficiary_cost, CALL_STIPEND,
+        COLD_ACCOUNT_ACCESS_COST_ADDITIONAL, COLD_SLOAD_COST_ADDITIONAL, ISTANBUL_SLOAD_GAS,
+        WARM_STORAGE_READ_COST,
     },
     instructions::utility::{IntoAddress, IntoU256},
     interpreter_types::{InputsTr, InterpreterTypes, MemoryTr, RuntimeFlag, StackTr},
@@ -367,12 +368,8 @@ pub fn log<const N: usize, H: Host + ?Sized>(
         resize_memory!(context.interpreter, offset, len);
         Bytes::copy_from_slice(context.interpreter.memory.slice_len(offset, len).as_ref())
     };
-    if context.interpreter.stack.len() < N {
-        context.interpreter.halt(InstructionResult::StackUnderflow);
-        return;
-    }
     let Some(topics) = context.interpreter.stack.popn::<N>() else {
-        context.interpreter.halt(InstructionResult::StackUnderflow);
+        context.interpreter.halt_underflow();
         return;
     };
 
@@ -399,14 +396,15 @@ pub fn selfdestruct<WIRE: InterpreterTypes, H: Host + ?Sized>(
     // static gas
     gas!(context.interpreter, gas::static_selfdestruct_cost(spec));
 
-    let Some(res) = context
-        .host
-        .selfdestruct(context.interpreter.input.target_address(), target)
-    else {
-        context
-            .interpreter
-            .halt(InstructionResult::FatalExternalError);
-        return;
+    let skip_cold = context.interpreter.gas.remaining() < selfdestruct_cold_beneficiary_cost(spec);
+    let res = match context.host.selfdestruct(
+        context.interpreter.input.target_address(),
+        target,
+        skip_cold,
+    ) {
+        Ok(res) => res,
+        Err(LoadError::ColdLoadSkipped) => return context.interpreter.halt_oog(),
+        Err(LoadError::DBError) => return context.interpreter.halt_fatal(),
     };
 
     gas!(context.interpreter, gas::dyn_selfdestruct_cost(spec, &res));
