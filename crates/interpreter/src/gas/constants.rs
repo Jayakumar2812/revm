@@ -57,7 +57,7 @@ pub const ISTANBUL_SLOAD_GAS: u64 = 800;
 /// Gas cost for SSTORE when setting a storage slot from zero to non-zero.
 pub const SSTORE_SET: u64 = 20000;
 /// Gas cost for SSTORE when modifying an existing non-zero storage slot.
-pub const SSTORE_RESET: u64 = 5000;
+pub const SSTORE_RESET: u64 = 11000; // monad
 /// Gas refund for SSTORE when clearing a storage slot (setting to zero).
 pub const REFUND_SSTORE_CLEARS: i64 = 15000;
 
@@ -84,9 +84,9 @@ pub const ACCESS_LIST_ADDRESS: u64 = 2400;
 /// Gas cost for accessing a storage key in the access list (EIP-2930).
 pub const ACCESS_LIST_STORAGE_KEY: u64 = 1900;
 /// Gas cost for SLOAD when accessing a cold storage slot (EIP-2929).
-pub const COLD_SLOAD_COST: u64 = 2100;
+pub const COLD_SLOAD_COST: u64 = 8100; // monad
 /// Gas cost for accessing a cold account (EIP-2929).
-pub const COLD_ACCOUNT_ACCESS_COST: u64 = 2600;
+pub const COLD_ACCOUNT_ACCESS_COST: u64 = 10100; // monad
 /// Additional gas cost for accessing a cold account.
 pub const COLD_ACCOUNT_ACCESS_COST_ADDITIONAL: u64 =
     COLD_ACCOUNT_ACCESS_COST - WARM_STORAGE_READ_COST;
