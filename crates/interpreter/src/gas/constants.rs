@@ -59,7 +59,7 @@ pub const SSTORE_SET: u64 = 20000;
 /// Gas cost for SSTORE when modifying an existing non-zero storage slot.
 pub const SSTORE_RESET: u64 = 11000; // monad
 /// Gas refund for SSTORE when clearing a storage slot (setting to zero).
-pub const REFUND_SSTORE_CLEARS: i64 = 15000;
+pub const REFUND_SSTORE_CLEARS: i64 = 0;
 
 /// The standard cost of calldata token.
 pub const STANDARD_TOKEN_COST: u64 = 4;
