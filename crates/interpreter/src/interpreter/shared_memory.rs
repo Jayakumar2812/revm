@@ -598,6 +598,7 @@ fn resize_memory_cold<Memory: MemoryTr>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{gas::memory_gas, Gas};
 
     #[test]
     fn test_num_words() {
@@ -677,5 +678,43 @@ mod tests {
         assert_eq!(sm1.buffer_ref().len(), 32);
         assert_eq!(sm1.len(), 32);
         assert_eq!(sm1.buffer_ref().get(0..32), Some(&[0_u8; 32] as &[u8]));
+    }
+
+    #[test]
+    fn memory_gas_is_linear() {
+        assert_eq!(memory_gas(0), 0);
+        assert_eq!(memory_gas(1), 0);
+        assert_eq!(memory_gas(2), 1);
+        assert_eq!(memory_gas(3), 1);
+        assert_eq!(memory_gas(4), 2);
+    }
+
+    #[test]
+    fn resize_memory_charges_incremental_linear_cost() {
+        let mut gas = Gas::new(10);
+        let mut memory = SharedMemory::new();
+
+        assert!(resize_memory(&mut gas, &mut memory, 0, 32));
+        assert_eq!(gas.spent(), 0);
+
+        assert!(resize_memory(&mut gas, &mut memory, 0, 64));
+        assert_eq!(gas.spent(), 1);
+
+        assert!(resize_memory(&mut gas, &mut memory, 0, 96));
+        assert_eq!(gas.spent(), 1);
+
+        assert!(resize_memory(&mut gas, &mut memory, 0, 128));
+        assert_eq!(gas.spent(), 2);
+    }
+
+    #[cfg(feature = "memory_limit")]
+    #[test]
+    fn child_context_uses_shared_8mb_limit() {
+        let limit = 8 * 1024 * 1024;
+        let mut parent = SharedMemory::new_with_memory_limit(limit);
+        parent.resize(limit as usize);
+
+        let child = parent.new_child_context();
+        assert!(child.limit_reached(0, 1));
     }
 }

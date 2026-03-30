@@ -34,7 +34,7 @@ serde = { workspace = true, features = ["derive"] }
 alloy-primitives.workspace = true
 
 [features]
-default = ["std", "c-kzg", "secp256k1", "portable", "blst"]
+default = ["std", "c-kzg", "secp256k1", "portable", "blst", "memory_limit"]
 std = [
 	"serde?/std",
 	"revm/std",

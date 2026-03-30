@@ -18,6 +18,38 @@ use primitives::{
 };
 use state::{Account, EvmState, EvmStorageSlot, TransientStorage};
 use std::vec::Vec;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+struct StoragePage {
+    address: Address,
+    page_index: U256,
+}
+
+impl StoragePage {
+    #[inline]
+    fn new(address: Address, key: StorageKey) -> Self {
+        Self {
+            address,
+            page_index: key >> 7,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+struct PageSlotDelta {
+    slot_delta: i64,
+    max_nonzero_slots: i64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+enum PageJournalEntry {
+    ReadPageAdded(StoragePage),
+    WritePageAdded(StoragePage),
+    SlotDeltaChanged(StoragePage, Option<PageSlotDelta>),
+}
 /// Inner journal state that contains journal and state changes.
 ///
 /// Spec Id is a essential information for the Journal.
@@ -57,6 +89,14 @@ pub struct JournalInner<ENTRY> {
     pub spec: SpecId,
     /// Warm addresses containing both coinbase and current precompiles.
     pub warm_addresses: WarmAddresses,
+    /// Pages that have already paid the read access cost in this transaction.
+    read_accessed_pages: HashMap<StoragePage, ()>,
+    /// Pages that have already paid the first-write I/O cost in this transaction.
+    write_accessed_pages: HashMap<StoragePage, ()>,
+    /// Page-level net growth tracking for Monad storage pricing.
+    page_slot_deltas: HashMap<StoragePage, PageSlotDelta>,
+    /// Journal for reverting page-level bookkeeping on subcall reverts.
+    page_journal: Vec<PageJournalEntry>,
 }
 
 impl<ENTRY: JournalEntryTr> Default for JournalInner<ENTRY> {
@@ -80,6 +120,10 @@ impl<ENTRY: JournalEntryTr> JournalInner<ENTRY> {
             depth: 0,
             spec: SpecId::default(),
             warm_addresses: WarmAddresses::new(),
+            read_accessed_pages: HashMap::default(),
+            write_accessed_pages: HashMap::default(),
+            page_slot_deltas: HashMap::default(),
+            page_journal: Vec::new(),
         }
     }
 
@@ -108,6 +152,10 @@ impl<ENTRY: JournalEntryTr> JournalInner<ENTRY> {
             transaction_id,
             spec,
             warm_addresses,
+            read_accessed_pages,
+            write_accessed_pages,
+            page_slot_deltas,
+            page_journal,
         } = self;
         // Spec precompiles and state are not changed. It is always set again execution.
         let _ = spec;
@@ -120,6 +168,10 @@ impl<ENTRY: JournalEntryTr> JournalInner<ENTRY> {
 
         // Clear coinbase address warming for next tx
         warm_addresses.clear_coinbase_and_access_list();
+        read_accessed_pages.clear();
+        write_accessed_pages.clear();
+        page_slot_deltas.clear();
+        page_journal.clear();
         // increment transaction id.
         *transaction_id += 1;
         logs.clear();
@@ -137,6 +189,10 @@ impl<ENTRY: JournalEntryTr> JournalInner<ENTRY> {
             transaction_id,
             spec,
             warm_addresses,
+            read_accessed_pages,
+            write_accessed_pages,
+            page_slot_deltas,
+            page_journal,
         } = self;
         let is_spurious_dragon_enabled = spec.is_enabled_in(SPURIOUS_DRAGON);
         // iterate over all journals entries and revert our global state
@@ -147,6 +203,10 @@ impl<ENTRY: JournalEntryTr> JournalInner<ENTRY> {
         *depth = 0;
         logs.clear();
         *transaction_id += 1;
+        read_accessed_pages.clear();
+        write_accessed_pages.clear();
+        page_slot_deltas.clear();
+        page_journal.clear();
 
         // Clear coinbase address warming for next tx
         warm_addresses.clear_coinbase_and_access_list();
@@ -169,6 +229,10 @@ impl<ENTRY: JournalEntryTr> JournalInner<ENTRY> {
             transaction_id,
             spec,
             warm_addresses,
+            read_accessed_pages,
+            write_accessed_pages,
+            page_slot_deltas,
+            page_journal,
         } = self;
         // Spec is not changed. And it is always set again in execution.
         let _ = spec;
@@ -181,6 +245,10 @@ impl<ENTRY: JournalEntryTr> JournalInner<ENTRY> {
 
         // clear journal and journal history.
         journal.clear();
+        page_journal.clear();
+        read_accessed_pages.clear();
+        write_accessed_pages.clear();
+        page_slot_deltas.clear();
         *depth = 0;
         // reset transaction id.
         *transaction_id = 0;
@@ -449,6 +517,7 @@ impl<ENTRY: JournalEntryTr> JournalInner<ENTRY> {
         let checkpoint = JournalCheckpoint {
             log_i: self.logs.len(),
             journal_i: self.journal.len(),
+            page_journal_i: self.page_journal.len(),
         };
         self.depth += 1;
         checkpoint
@@ -478,6 +547,69 @@ impl<ENTRY: JournalEntryTr> JournalInner<ENTRY> {
                     entry.revert(state, Some(transient_storage), is_spurious_dragon_enabled);
                 });
         }
+
+        if checkpoint.page_journal_i < self.page_journal.len() {
+            self.page_journal
+                .drain(checkpoint.page_journal_i..)
+                .rev()
+                .for_each(|entry| match entry {
+                    PageJournalEntry::ReadPageAdded(page) => {
+                        self.read_accessed_pages.remove(&page);
+                    }
+                    PageJournalEntry::WritePageAdded(page) => {
+                        self.write_accessed_pages.remove(&page);
+                    }
+                    PageJournalEntry::SlotDeltaChanged(page, previous) => {
+                        if let Some(previous) = previous {
+                            self.page_slot_deltas.insert(page, previous);
+                        } else {
+                            self.page_slot_deltas.remove(&page);
+                        }
+                    }
+                });
+        }
+    }
+
+    #[inline]
+    fn touch_read_page(&mut self, page: StoragePage) -> bool {
+        if self.read_accessed_pages.insert(page, ()).is_none() {
+            self.page_journal
+                .push(PageJournalEntry::ReadPageAdded(page));
+            true
+        } else {
+            false
+        }
+    }
+
+    #[inline]
+    fn touch_write_page(&mut self, page: StoragePage) -> bool {
+        if self.write_accessed_pages.insert(page, ()).is_none() {
+            self.page_journal
+                .push(PageJournalEntry::WritePageAdded(page));
+            true
+        } else {
+            false
+        }
+    }
+
+    #[inline]
+    fn update_page_slot_delta(&mut self, page: StoragePage, delta_change: i64) -> bool {
+        let previous = self.page_slot_deltas.get(&page).copied();
+        let mut current = previous.unwrap_or_default();
+        current.slot_delta += delta_change;
+        let mut charge_new_slot = false;
+        if delta_change > 0 && current.slot_delta > current.max_nonzero_slots {
+            current.max_nonzero_slots = current.slot_delta;
+            charge_new_slot = true;
+        }
+
+        if previous != Some(current) {
+            self.page_journal
+                .push(PageJournalEntry::SlotDeltaChanged(page, previous));
+            self.page_slot_deltas.insert(page, current);
+        }
+
+        charge_new_slot
     }
 
     /// Performs selfdestruct action.
@@ -748,28 +880,24 @@ impl<ENTRY: JournalEntryTr> JournalInner<ENTRY> {
         key: StorageKey,
         skip_cold_load: bool,
     ) -> Result<StateLoad<StorageValue>, JournalLoadError<DB::Error>> {
+        let page = StoragePage::new(address, key);
+        let is_cold = !self.read_accessed_pages.contains_key(&page)
+            && !self.warm_addresses.is_storage_warm(&address, &key);
+        if is_cold && skip_cold_load {
+            return Err(JournalLoadError::ColdLoadSkipped);
+        }
+
         // assume acc is warm
         let account = self.state.get_mut(&address).unwrap();
 
         let is_newly_created = account.is_created();
-        let (value, is_cold) = match account.storage.entry(key) {
+        let value = match account.storage.entry(key) {
             Entry::Occupied(occ) => {
                 let slot = occ.into_mut();
-                // skip load if account is cold.
-                let is_cold = slot.is_cold_transaction_id(self.transaction_id);
-                if skip_cold_load && is_cold {
-                    return Err(JournalLoadError::ColdLoadSkipped);
-                }
                 slot.mark_warm_with_transaction_id(self.transaction_id);
-                (slot.present_value, is_cold)
+                slot.present_value
             }
             Entry::Vacant(vac) => {
-                // is storage cold
-                let is_cold = !self.warm_addresses.is_storage_warm(&address, &key);
-
-                if is_cold && skip_cold_load {
-                    return Err(JournalLoadError::ColdLoadSkipped);
-                }
                 // if storage was cleared, we don't need to ping db.
                 let value = if is_newly_created {
                     StorageValue::ZERO
@@ -778,14 +906,11 @@ impl<ENTRY: JournalEntryTr> JournalInner<ENTRY> {
                 };
                 vac.insert(EvmStorageSlot::new(value, self.transaction_id));
 
-                (value, is_cold)
+                value
             }
         };
 
-        if is_cold {
-            // add it to journal as cold loaded.
-            self.journal.push(ENTRY::storage_warmed(address, key));
-        }
+        self.touch_read_page(page);
 
         Ok(StateLoad::new(value, is_cold))
     }
@@ -804,34 +929,62 @@ impl<ENTRY: JournalEntryTr> JournalInner<ENTRY> {
         new: StorageValue,
         skip_cold_load: bool,
     ) -> Result<StateLoad<SStoreResult>, JournalLoadError<DB::Error>> {
+        let page = StoragePage::new(address, key);
         // assume that acc exists and load the slot.
         let present = self.sload(db, address, key, skip_cold_load)?;
-        let acc = self.state.get_mut(&address).unwrap();
-
-        // if there is no original value in dirty return present value, that is our original.
-        let slot = acc.storage.get_mut(&key).unwrap();
+        let (original_value, present_value) = {
+            let acc = self.state.get_mut(&address).unwrap();
+            let slot = acc.storage.get_mut(&key).unwrap();
+            (slot.original_value(), slot.present_value())
+        };
 
         // new value is same as present, we don't need to do anything
         if present.data == new {
             return Ok(StateLoad::new(
                 SStoreResult {
-                    original_value: slot.original_value(),
+                    original_value,
                     present_value: present.data,
                     new_value: new,
+                    page_write_charged: false,
+                    new_slot_cost_charged: false,
                 },
                 present.is_cold,
             ));
         }
 
+        let page_write_charged = self.touch_write_page(page);
+        let new_slot_cost_charged =
+            if original_value.is_zero() && present_value.is_zero() && !new.is_zero() {
+                self.update_page_slot_delta(page, 1)
+            } else if !original_value.is_zero() && !present_value.is_zero() && new.is_zero() {
+                self.update_page_slot_delta(page, -1);
+                false
+            } else if original_value.is_zero() && !present_value.is_zero() && new.is_zero() {
+                self.update_page_slot_delta(page, -1);
+                false
+            } else if !original_value.is_zero() && present_value.is_zero() && !new.is_zero() {
+                self.update_page_slot_delta(page, 1)
+            } else {
+                false
+            };
+
         self.journal
             .push(ENTRY::storage_changed(address, key, present.data));
         // insert value into present state.
-        slot.present_value = new;
+        self.state
+            .get_mut(&address)
+            .unwrap()
+            .storage
+            .get_mut(&key)
+            .unwrap()
+            .present_value = new;
         Ok(StateLoad::new(
             SStoreResult {
-                original_value: slot.original_value(),
+                original_value,
                 present_value: present.data,
                 new_value: new,
+                page_write_charged,
+                new_slot_cost_charged,
             },
             present.is_cold,
         ))
@@ -896,7 +1049,7 @@ mod tests {
     use super::*;
     use context_interface::journaled_state::entry::JournalEntry;
     use database_interface::EmptyDB;
-    use primitives::{address, HashSet, U256};
+    use primitives::{address, HashMap, HashSet, U256};
     use state::AccountInfo;
 
     #[test]
@@ -932,5 +1085,94 @@ mod tests {
         let state_load = result.unwrap();
         assert!(!state_load.is_cold); // Should be warm
         assert_eq!(state_load.data, U256::ZERO); // Empty slot
+    }
+
+    #[test]
+    fn test_access_list_warms_whole_page() {
+        let mut journal = JournalInner::<JournalEntry>::new();
+        let test_address = address!("1000000000000000000000000000000000000000");
+        let access_list_key = U256::from(1);
+        let same_page_key = U256::from(2);
+
+        journal
+            .state
+            .insert(test_address, Account::from(AccountInfo::default()));
+
+        let mut access_list = HashMap::default();
+        let mut storage_keys = HashSet::default();
+        storage_keys.insert(access_list_key);
+        access_list.insert(test_address, storage_keys);
+        journal.warm_addresses.set_access_list(access_list);
+
+        let mut db = EmptyDB::new();
+        let state_load = journal
+            .sload(&mut db, test_address, same_page_key, true)
+            .unwrap();
+
+        assert!(!state_load.is_cold);
+    }
+
+    #[test]
+    fn test_page_write_and_growth_tracking() {
+        let mut journal = JournalInner::<JournalEntry>::new();
+        let test_address = address!("1000000000000000000000000000000000000000");
+        journal
+            .state
+            .insert(test_address, Account::from(AccountInfo::default()));
+
+        let mut db = EmptyDB::new();
+
+        let first = journal
+            .sstore(&mut db, test_address, U256::from(1), U256::from(1), false)
+            .unwrap();
+        assert!(first.is_cold);
+        assert!(first.data.page_write_charged);
+        assert!(first.data.new_slot_cost_charged);
+
+        let second = journal
+            .sstore(&mut db, test_address, U256::from(2), U256::from(1), false)
+            .unwrap();
+        assert!(!second.is_cold);
+        assert!(!second.data.page_write_charged);
+        assert!(second.data.new_slot_cost_charged);
+
+        let clear = journal
+            .sstore(&mut db, test_address, U256::from(1), U256::ZERO, false)
+            .unwrap();
+        assert!(!clear.data.page_write_charged);
+        assert!(!clear.data.new_slot_cost_charged);
+
+        let reuse_same_page = journal
+            .sstore(&mut db, test_address, U256::from(3), U256::from(1), false)
+            .unwrap();
+        assert!(!reuse_same_page.data.page_write_charged);
+        assert!(!reuse_same_page.data.new_slot_cost_charged);
+    }
+
+    #[test]
+    fn test_page_bookkeeping_reverts_with_checkpoint() {
+        let mut journal = JournalInner::<JournalEntry>::new();
+        let test_address = address!("1000000000000000000000000000000000000000");
+        journal
+            .state
+            .insert(test_address, Account::from(AccountInfo::default()));
+
+        let checkpoint = journal.checkpoint();
+        let mut db = EmptyDB::new();
+        let first = journal
+            .sstore(&mut db, test_address, U256::from(1), U256::from(1), false)
+            .unwrap();
+        assert!(first.is_cold);
+        assert!(first.data.page_write_charged);
+        assert!(first.data.new_slot_cost_charged);
+
+        journal.checkpoint_revert(checkpoint);
+
+        let after_revert = journal
+            .sstore(&mut db, test_address, U256::from(1), U256::from(1), false)
+            .unwrap();
+        assert!(after_revert.is_cold);
+        assert!(after_revert.data.page_write_charged);
+        assert!(after_revert.data.new_slot_cost_charged);
     }
 }

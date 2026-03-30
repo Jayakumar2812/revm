@@ -33,8 +33,14 @@ pub const CALLVALUE: u64 = 9000;
 pub const NEWACCOUNT: u64 = 25000;
 /// Base gas cost for EXP instruction.
 pub const EXP: u64 = 10;
-/// Gas cost per word for memory operations.
-pub const MEMORY: u64 = 3;
+/// Gas cost per word for SLOAD on a warm storage page.
+pub const BASE_SLOAD_COST: u64 = 100;
+/// Base gas cost for SSTORE page updates.
+pub const BASE_SSTORE_COST: u64 = 100;
+/// Additional gas cost when a write grows a page's net non-zero slot count.
+pub const NEW_SLOT_COST: u64 = 17100;
+/// First-write page I/O cost for a modified storage page.
+pub const PAGE_WRITE_COST: u64 = 2800;
 /// Base gas cost for LOG instructions.
 pub const LOG: u64 = 375;
 /// Gas cost per byte of data in LOG instructions.
@@ -83,8 +89,8 @@ pub const EOF_CREATE_GAS: u64 = 32000;
 pub const ACCESS_LIST_ADDRESS: u64 = 2400;
 /// Gas cost for accessing a storage key in the access list (EIP-2930).
 pub const ACCESS_LIST_STORAGE_KEY: u64 = 1900;
-/// Gas cost for SLOAD when accessing a cold storage slot (EIP-2929).
-pub const COLD_SLOAD_COST: u64 = 8100; // monad
+/// Gas cost for SLOAD when accessing a cold storage page.
+pub const COLD_SLOAD_COST: u64 = 8000; // monad
 /// Gas cost for accessing a cold account (EIP-2929).
 pub const COLD_ACCOUNT_ACCESS_COST: u64 = 10100; // monad
 /// Additional gas cost for accessing a cold account.
@@ -93,7 +99,7 @@ pub const COLD_ACCOUNT_ACCESS_COST_ADDITIONAL: u64 =
 /// Additional gas cost for accessing a cold storage
 pub const COLD_SLOAD_COST_ADDITIONAL: u64 = COLD_SLOAD_COST - WARM_STORAGE_READ_COST;
 /// Gas cost for reading from a warm storage slot (EIP-2929).
-pub const WARM_STORAGE_READ_COST: u64 = 100;
+pub const WARM_STORAGE_READ_COST: u64 = BASE_SLOAD_COST;
 /// Gas cost for SSTORE reset operation on a warm storage slot.
 pub const WARM_SSTORE_RESET: u64 = SSTORE_RESET - COLD_SLOAD_COST;
 

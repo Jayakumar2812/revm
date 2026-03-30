@@ -1,8 +1,7 @@
 use crate::{
     gas::{
         self, selfdestruct_cold_beneficiary_cost, CALL_STIPEND,
-        COLD_ACCOUNT_ACCESS_COST_ADDITIONAL, COLD_SLOAD_COST_ADDITIONAL, ISTANBUL_SLOAD_GAS,
-        WARM_STORAGE_READ_COST,
+        COLD_ACCOUNT_ACCESS_COST_ADDITIONAL, WARM_STORAGE_READ_COST,
     },
     instructions::utility::{IntoAddress, IntoU256},
     interpreter_types::{InputsTr, InterpreterTypes, MemoryTr, RuntimeFlag, StackTr},
@@ -224,39 +223,14 @@ pub fn sload<WIRE: InterpreterTypes, H: Host + ?Sized>(context: InstructionConte
     let spec_id = context.interpreter.runtime_flag.spec_id();
     let target = context.interpreter.input.target_address();
 
-    // `SLOAD` opcode cost calculation.
-    let gas = if spec_id.is_enabled_in(BERLIN) {
-        WARM_STORAGE_READ_COST
-    } else if spec_id.is_enabled_in(ISTANBUL) {
-        // EIP-1884: Repricing for trie-size-dependent opcodes
-        ISTANBUL_SLOAD_GAS
-    } else if spec_id.is_enabled_in(TANGERINE) {
-        // EIP-150: Gas cost changes for IO-heavy operations
-        200
-    } else {
-        50
+    let Some(storage) = context.host.sload(target, *index) else {
+        return context.interpreter.halt_fatal();
     };
-    gas!(context.interpreter, gas);
-    if spec_id.is_enabled_in(BERLIN) {
-        let skip_cold = context.interpreter.gas.remaining() < COLD_SLOAD_COST_ADDITIONAL;
-        let res = context.host.sload_skip_cold_load(target, *index, skip_cold);
-        match res {
-            Ok(storage) => {
-                if storage.is_cold {
-                    gas!(context.interpreter, COLD_SLOAD_COST_ADDITIONAL);
-                }
-
-                *index = storage.data;
-            }
-            Err(LoadError::ColdLoadSkipped) => context.interpreter.halt_oog(),
-            Err(LoadError::DBError) => context.interpreter.halt_fatal(),
-        }
-    } else {
-        let Some(storage) = context.host.sload(target, *index) else {
-            return context.interpreter.halt_fatal();
-        };
-        *index = storage.data;
-    };
+    gas!(
+        context.interpreter,
+        gas::sload_cost(spec_id, storage.is_cold)
+    );
+    *index = storage.data;
 }
 
 /// Implements the SSTORE instruction.
@@ -283,44 +257,14 @@ pub fn sstore<WIRE: InterpreterTypes, H: Host + ?Sized>(context: InstructionCont
         return;
     }
 
-    // static gas
-    gas!(
-        context.interpreter,
-        gas::static_sstore_cost(context.interpreter.runtime_flag.spec_id())
-    );
-
-    let state_load = if spec_id.is_enabled_in(BERLIN) {
-        let skip_cold = context.interpreter.gas.remaining() < COLD_SLOAD_COST_ADDITIONAL;
-        let res = context
-            .host
-            .sstore_skip_cold_load(target, index, value, skip_cold);
-        match res {
-            Ok(load) => load,
-            Err(LoadError::ColdLoadSkipped) => return context.interpreter.halt_oog(),
-            Err(LoadError::DBError) => return context.interpreter.halt_fatal(),
-        }
-    } else {
-        let Some(load) = context.host.sstore(target, index, value) else {
-            return context.interpreter.halt_fatal();
-        };
-        load
+    let Some(state_load) = context.host.sstore(target, index, value) else {
+        return context.interpreter.halt_fatal();
     };
 
-    // dynamic gas
     gas!(
         context.interpreter,
-        gas::dyn_sstore_cost(
-            context.interpreter.runtime_flag.spec_id(),
-            &state_load.data,
-            state_load.is_cold
-        )
+        gas::sstore_cost(spec_id, &state_load.data, state_load.is_cold)
     );
-
-    // refund
-    context.interpreter.gas.record_refund(gas::sstore_refund(
-        context.interpreter.runtime_flag.spec_id(),
-        &state_load.data,
-    ));
 }
 
 /// EIP-1153: Transient storage opcodes

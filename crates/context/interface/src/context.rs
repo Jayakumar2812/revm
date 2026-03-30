@@ -186,6 +186,10 @@ pub struct SStoreResult {
     pub present_value: StorageValue,
     /// New value that is set
     pub new_value: StorageValue,
+    /// `true` if this write is the first page write charged in the transaction.
+    pub page_write_charged: bool,
+    /// `true` if this write increases the page's peak non-zero slot count.
+    pub new_slot_cost_charged: bool,
 }
 
 impl SStoreResult {

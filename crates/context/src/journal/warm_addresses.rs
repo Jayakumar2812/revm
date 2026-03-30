@@ -139,7 +139,10 @@ impl WarmAddresses {
     #[inline]
     pub fn is_storage_warm(&self, address: &Address, key: &StorageKey) -> bool {
         if let Some(access_list) = self.access_list.get(address) {
-            return access_list.contains(key);
+            let page_index = *key >> 7;
+            return access_list
+                .iter()
+                .any(|accessed_key| (*accessed_key >> 7) == page_index);
         }
 
         false

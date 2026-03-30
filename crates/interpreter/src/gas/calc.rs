@@ -5,56 +5,10 @@ use context_interface::{
 };
 use primitives::{eip7702, hardfork::SpecId, U256};
 
-/// `SSTORE` opcode refund calculation.
-#[allow(clippy::collapsible_else_if)]
+/// `SSTORE` refunds are disabled under Monad's page-based storage pricing.
 #[inline]
-pub fn sstore_refund(spec_id: SpecId, vals: &SStoreResult) -> i64 {
-    if spec_id.is_enabled_in(SpecId::ISTANBUL) {
-        // EIP-3529: Reduction in refunds
-        let sstore_clears_schedule = if spec_id.is_enabled_in(SpecId::LONDON) {
-            (SSTORE_RESET - COLD_SLOAD_COST + ACCESS_LIST_STORAGE_KEY) as i64
-        } else {
-            REFUND_SSTORE_CLEARS
-        };
-        if vals.is_new_eq_present() {
-            0
-        } else {
-            if vals.is_original_eq_present() && vals.is_new_zero() {
-                sstore_clears_schedule
-            } else {
-                let mut refund = 0;
-
-                if !vals.is_original_zero() {
-                    if vals.is_present_zero() {
-                        refund -= sstore_clears_schedule;
-                    } else if vals.is_new_zero() {
-                        refund += sstore_clears_schedule;
-                    }
-                }
-
-                if vals.is_original_eq_new() {
-                    let (gas_sstore_reset, gas_sload) = if spec_id.is_enabled_in(SpecId::BERLIN) {
-                        (SSTORE_RESET - COLD_SLOAD_COST, WARM_STORAGE_READ_COST)
-                    } else {
-                        (SSTORE_RESET, sload_cost(spec_id, false))
-                    };
-                    if vals.is_original_zero() {
-                        refund += (SSTORE_SET - gas_sload) as i64;
-                    } else {
-                        refund += (gas_sstore_reset - gas_sload) as i64;
-                    }
-                }
-
-                refund
-            }
-        }
-    } else {
-        if !vals.is_present_zero() && vals.is_new_zero() {
-            REFUND_SSTORE_CLEARS
-        } else {
-            0
-        }
-    }
+pub const fn sstore_refund(_spec_id: SpecId, _vals: &SStoreResult) -> i64 {
+    0
 }
 
 /// `CREATE2` opcode cost calculation.
@@ -163,104 +117,68 @@ pub const fn initcode_cost(len: usize) -> u64 {
 
 /// `SLOAD` opcode cost calculation.
 #[inline]
-pub const fn sload_cost(spec_id: SpecId, is_cold: bool) -> u64 {
-    if spec_id.is_enabled_in(SpecId::BERLIN) {
-        if is_cold {
-            COLD_SLOAD_COST
-        } else {
-            WARM_STORAGE_READ_COST
-        }
-    } else if spec_id.is_enabled_in(SpecId::ISTANBUL) {
-        // EIP-1884: Repricing for trie-size-dependent opcodes
-        ISTANBUL_SLOAD_GAS
-    } else if spec_id.is_enabled_in(SpecId::TANGERINE) {
-        // EIP-150: Gas cost changes for IO-heavy operations
-        200
+pub const fn sload_cost(_spec_id: SpecId, is_cold: bool) -> u64 {
+    if is_cold {
+        COLD_SLOAD_COST
     } else {
-        50
+        BASE_SLOAD_COST
     }
 }
 
 /// Static gas cost for sstore.
 #[inline]
-pub const fn sstore_cost_static(spec_id: SpecId) -> u64 {
-    if spec_id.is_enabled_in(SpecId::BERLIN) {
-        WARM_STORAGE_READ_COST
-    } else if spec_id.is_enabled_in(SpecId::ISTANBUL) {
-        ISTANBUL_SLOAD_GAS
-    } else {
-        SSTORE_RESET
-    }
+pub const fn sstore_cost_static(_spec_id: SpecId) -> u64 {
+    0
 }
 
 /// Dynamic gas cost for sstore.
 #[inline]
 pub const fn sstore_cost_dynamic(spec_id: SpecId, vals: &SStoreResult, is_cold: bool) -> u64 {
-    sstore_cost(spec_id, vals, is_cold) - sstore_cost_static(spec_id)
+    sstore_cost(spec_id, vals, is_cold)
 }
 
 /// Static gas cost for sstore.
 #[inline]
-pub const fn static_sstore_cost(spec_id: SpecId) -> u64 {
-    if spec_id.is_enabled_in(SpecId::BERLIN) {
-        WARM_STORAGE_READ_COST
-    } else if spec_id.is_enabled_in(SpecId::ISTANBUL) {
-        ISTANBUL_SLOAD_GAS
-    } else {
-        SSTORE_RESET
-    }
+pub const fn static_sstore_cost(_spec_id: SpecId) -> u64 {
+    0
 }
 
 /// Dynamic gas cost for sstore.
 #[inline]
 pub const fn dyn_sstore_cost(spec_id: SpecId, vals: &SStoreResult, is_cold: bool) -> u64 {
-    sstore_cost(spec_id, vals, is_cold) - static_sstore_cost(spec_id)
+    sstore_cost(spec_id, vals, is_cold)
 }
 
 /// `SSTORE` opcode cost calculation.
 #[inline]
-pub const fn sstore_cost(spec_id: SpecId, vals: &SStoreResult, is_cold: bool) -> u64 {
-    if spec_id.is_enabled_in(SpecId::BERLIN) {
-        // Berlin specification logic
-        let mut gas_cost = istanbul_sstore_cost::<WARM_STORAGE_READ_COST, WARM_SSTORE_RESET>(vals);
-
-        if is_cold {
-            gas_cost += COLD_SLOAD_COST;
-        }
-        gas_cost
-    } else if spec_id.is_enabled_in(SpecId::ISTANBUL) {
-        // Istanbul logic
-        istanbul_sstore_cost::<ISTANBUL_SLOAD_GAS, SSTORE_RESET>(vals)
+pub const fn sstore_cost(_spec_id: SpecId, vals: &SStoreResult, is_cold: bool) -> u64 {
+    let mut gas_cost = if vals.is_original_zero() && vals.is_present_zero() && !vals.is_new_zero() {
+        BASE_SSTORE_COST
+    } else if !vals.is_original_zero() && !vals.is_present_zero() && vals.is_new_zero() {
+        BASE_SSTORE_COST
+    } else if vals.is_original_zero() && !vals.is_present_zero() && vals.is_new_zero() {
+        0
+    } else if !vals.is_original_zero() && vals.is_present_zero() && !vals.is_new_zero() {
+        BASE_SSTORE_COST
     } else {
-        // Frontier logic
-        frontier_sstore_cost(vals)
-    }
-}
+        BASE_SSTORE_COST
+    };
 
-/// EIP-2200: Structured Definitions for Net Gas Metering
-#[inline]
-const fn istanbul_sstore_cost<const SLOAD_GAS: u64, const SSTORE_RESET_GAS: u64>(
-    vals: &SStoreResult,
-) -> u64 {
-    if vals.is_new_eq_present() {
-        SLOAD_GAS
-    } else if vals.is_original_eq_present() && vals.is_original_zero() {
-        SSTORE_SET
-    } else if vals.is_original_eq_present() {
-        SSTORE_RESET_GAS
+    if is_cold {
+        gas_cost += COLD_SLOAD_COST;
     } else {
-        SLOAD_GAS
+        gas_cost += BASE_SLOAD_COST;
     }
-}
 
-/// Frontier sstore cost just had two cases set and reset values.
-#[inline]
-const fn frontier_sstore_cost(vals: &SStoreResult) -> u64 {
-    if vals.is_present_zero() && !vals.is_new_zero() {
-        SSTORE_SET
-    } else {
-        SSTORE_RESET
+    if vals.page_write_charged {
+        gas_cost += PAGE_WRITE_COST;
     }
+
+    if vals.new_slot_cost_charged {
+        gas_cost += NEW_SLOT_COST;
+    }
+
+    gas_cost
 }
 
 /// Static gas cost for selfdestruct.
@@ -365,10 +283,7 @@ pub const fn warm_cold_cost_with_delegation(load: StateLoad<AccountLoad>) -> u64
 /// Memory expansion cost calculation for a given number of words.
 #[inline]
 pub const fn memory_gas(num_words: usize) -> u64 {
-    let num_words = num_words as u64;
-    MEMORY
-        .saturating_mul(num_words)
-        .saturating_add(num_words.saturating_mul(num_words) / 512)
+    (num_words as u64) / 2
 }
 
 /// Init and floor gas from transaction

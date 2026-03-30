@@ -449,7 +449,7 @@ fn test_mstore_big_offset_memory_oog() {
     let code = Bytes::from(
         &[
             0x60, 0x00, // PUSH1 0x00
-            0x61, 0x27, 0x10, // PUSH2 0x2710  (10,000)
+            0x61, 0xff, 0xff, // PUSH2 0xffff
             0x52, // MSTORE
             0x00, // STOP
         ][..],

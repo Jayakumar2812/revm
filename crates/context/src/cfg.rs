@@ -160,7 +160,7 @@ impl<SPEC> CfgEnv<SPEC> {
             tx_gas_limit_cap: None,
             blob_base_fee_update_fraction: None,
             #[cfg(feature = "memory_limit")]
-            memory_limit: (1 << 32) - 1,
+            memory_limit: 8 * 1024 * 1024,
             #[cfg(feature = "optional_balance_check")]
             disable_balance_check: false,
             #[cfg(feature = "optional_block_gas_limit")]
